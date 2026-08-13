@@ -1,8 +1,6 @@
 # Walksnail Ascent VRX UART Protocol
 
 
-# Walksnail VRX UART Protocol
-
 Open documentation and reference implementation of the **Walksnail VRX UART control and telemetry protocol**.
 
 The goal of this project is to make Walksnail VRX hardware easier to integrate with custom controllers, STM32 projects, ground stations, antenna trackers, test equipment, and other user-built systems.
