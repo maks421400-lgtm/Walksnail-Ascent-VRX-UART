@@ -1,5 +1,4 @@
-# Walksnail-Ascent-VRX-UART
-Open documentation and reference implementation of the Walksnail VRX UART control and telemetry protocol.
+# Walksnail Ascent VRX UART Protocol
 
 
 # Walksnail VRX UART Protocol
@@ -40,7 +39,7 @@ Currently documented:
 
 # UART configuration
 
-```text id="8oqpcd"
+```text
 115200 baud
 8 data bits
 No parity
@@ -49,7 +48,7 @@ No parity
 
 In short:
 
-```text id="r36ptf"
+```text
 115200 8N1
 ```
 
@@ -63,13 +62,13 @@ Before connecting a VRX to a microcontroller, verify the electrical UART voltage
 
 Packets use the following structure:
 
-```text id="7vqi94"
+```text
 FE EF CMD LEN_H LEN_L PAYLOAD... SUM_H SUM_L 0D 0A
 ```
 
 Field layout:
 
-```text id="c5ml86"
+```text
 +------+------+-----+-------+-------+-------------+-------+-------+------+------+
 |  FE  |  EF  | CMD | LEN_H | LEN_L | PAYLOAD ... | SUM_H | SUM_L |  0D  |  0A  |
 +------+------+-----+-------+-------+-------------+-------+-------+------+------+
@@ -79,13 +78,13 @@ The payload length is encoded as an unsigned 16-bit **big-endian** integer.
 
 Example for a four-byte payload:
 
-```text id="psv2d2"
+```text
 00 04
 ```
 
 Total frame size is:
 
-```text id="kv8bg7"
+```text
 payload_length + 9
 ```
 
@@ -95,7 +94,7 @@ payload_length + 9
 
 The checksum used for transmitted commands is a simple unsigned 16-bit sum of the payload bytes.
 
-```c id="c92ibv"
+```c
 uint16_t checksum = 0;
 
 for (uint16_t i = 0; i < payloadLength; i++) {
@@ -107,7 +106,7 @@ Only the payload is included.
 
 The following bytes are not included in the checksum:
 
-```text id="og0f8b"
+```text
 FE EF
 CMD
 LEN_H LEN_L
@@ -116,26 +115,26 @@ LEN_H LEN_L
 
 The checksum is transmitted big-endian:
 
-```text id="s4kx9y"
+```text
 SUM_H SUM_L
 ```
 
 Example:
 
-```text id="c72pea"
+```text
 Payload:
 40 03 00 00
 ```
 
 Calculation:
 
-```text id="0l26gm"
+```text
 0x40 + 0x03 + 0x00 + 0x00 = 0x0043
 ```
 
 Checksum bytes:
 
-```text id="3x42j9"
+```text
 00 43
 ```
 
@@ -143,7 +142,7 @@ Checksum bytes:
 
 # Generic packet transmitter
 
-```c id="5plpvn"
+```c
 void sendVrxPacket(
     uint8_t command,
     const uint8_t *payload,
@@ -178,25 +177,25 @@ void sendVrxPacket(
 
 Remote-control key events use:
 
-```text id="zvbszc"
+```text
 CMD = 0x22
 ```
 
 with a four-byte payload:
 
-```text id="rjmupa"
+```text
 40 KEY ARG 00
 ```
 
 Generic key packet:
 
-```text id="1l42f3"
+```text
 FE EF 22 00 04 40 KEY ARG 00 SUM_H SUM_L 0D 0A
 ```
 
 Helper:
 
-```c id="1hswbh"
+```c
 void sendVrxKey(uint8_t key, uint8_t argument)
 {
     uint8_t payload[4] = {
@@ -235,61 +234,61 @@ A possible command associated with key code `0x08` has not yet been sufficiently
 
 ## UP
 
-```text id="1g7z2l"
+```text
 FE EF 22 00 04 40 00 00 00 00 40 0D 0A
 ```
 
 ## DOWN
 
-```text id="3qtxwt"
+```text
 FE EF 22 00 04 40 01 00 00 00 41 0D 0A
 ```
 
 ## LEFT
 
-```text id="e7ni4x"
+```text
 FE EF 22 00 04 40 02 00 00 00 42 0D 0A
 ```
 
 ## RIGHT
 
-```text id="oq9x9f"
+```text
 FE EF 22 00 04 40 03 00 00 00 43 0D 0A
 ```
 
 ## ENTER
 
-```text id="bl1ivw"
+```text
 FE EF 22 00 04 40 04 00 00 00 44 0D 0A
 ```
 
 ## PAIR
 
-```text id="m2jw4t"
+```text
 FE EF 22 00 04 40 05 00 00 00 45 0D 0A
 ```
 
 ## RECORD
 
-```text id="6u0r7s"
+```text
 FE EF 22 00 04 40 06 00 00 00 46 0D 0A
 ```
 
 ## BACK
 
-```text id="byxwhe"
+```text
 FE EF 22 00 04 40 07 00 00 00 47 0D 0A
 ```
 
 ## FORCE720
 
-```text id="5dghli"
+```text
 FE EF 22 00 04 40 07 01 00 00 48 0D 0A
 ```
 
 ## DEBUG
 
-```text id="p8eq1u"
+```text
 FE EF 22 00 04 40 09 00 00 00 49 0D 0A
 ```
 
@@ -299,19 +298,19 @@ FE EF 22 00 04 40 09 00 00 00 49 0D 0A
 
 Channel selection uses:
 
-```text id="l0p82t"
+```text
 CMD = 0x22
 ```
 
 Payload:
 
-```text id="zz1ld7"
+```text
 50 BAND CHANNEL HOP 00 00 00 00
 ```
 
 Example:
 
-```c id="0mv1gh"
+```c
 void vrxSetChannel(
     uint8_t band,
     uint8_t channel,
@@ -334,7 +333,7 @@ void vrxSetChannel(
 
 The checksum is:
 
-```text id="hjxxdr"
+```text
 0x50 + BAND + CHANNEL + HOP
 ```
 
@@ -344,7 +343,7 @@ The checksum is:
 
 Known values:
 
-```text id="itv0nf"
+```text
 0 = Band A
 1 = Band B
 2 = Band C
@@ -354,7 +353,7 @@ Channels are represented internally as zero-based indexes.
 
 Therefore:
 
-```text id="d90tpu"
+```text
 raw channel 0 = displayed channel 1
 raw channel 1 = displayed channel 2
 ...
@@ -362,7 +361,7 @@ raw channel 1 = displayed channel 2
 
 Hop:
 
-```text id="xw6lgi"
+```text
 0 = Off
 1 = On
 ```
@@ -377,7 +376,7 @@ They should be considered implementation data rather than a universal guarantee 
 
 ## Band A
 
-```text id="45cnu3"
+```text
 CH1   4915 MHz
 CH2   4945 MHz
 CH3   4975 MHz
@@ -398,7 +397,7 @@ CH16  5839 MHz
 
 ## Band B
 
-```text id="922xk8"
+```text
 CH1   5475 MHz
 CH2   5510 MHz
 CH3   5545 MHz
@@ -418,7 +417,7 @@ CH15  5839 MHz
 
 ## Band C
 
-```text id="oft0jh"
+```text
 CH1   6015 MHz
 CH2   6045 MHz
 CH3   6075 MHz
@@ -440,14 +439,14 @@ CH13  5839 MHz
 
 Two request types are currently documented:
 
-```text id="4x9p2h"
+```text
 0x51 = Channel / frequency state
 0x52 = Link status
 ```
 
 Requests use:
 
-```text id="u0uhkp"
+```text
 CMD = 0xA2
 ```
 
@@ -457,13 +456,13 @@ CMD = 0xA2
 
 Payload:
 
-```text id="8987jd"
+```text
 51 00 00 00 00 00 00 00
 ```
 
 Complete packet:
 
-```text id="g88uro"
+```text
 FE EF A2 00 08 51 00 00 00 00 00 00 00 00 51 0D 0A
 ```
 
@@ -473,13 +472,13 @@ FE EF A2 00 08 51 00 00 00 00 00 00 00 00 51 0D 0A
 
 The response payload has four bytes:
 
-```text id="724njo"
+```text
 51 BAND CHANNEL HOP
 ```
 
 Decoded:
 
-```text id="ut4dyv"
+```text
 payload[0] = response type = 0x51
 payload[1] = Band
 payload[2] = Channel
@@ -488,7 +487,7 @@ payload[3] = Hop
 
 Frame shape:
 
-```text id="ozfl21"
+```text
 FE EF A2 00 04
 51 BAND CHANNEL HOP
 SUM_H SUM_L
@@ -503,13 +502,13 @@ The reply checksum behavior should be verified against raw hardware captures bef
 
 Payload:
 
-```text id="xf59mo"
+```text
 52 00 00 00 00 00 00 00
 ```
 
 Complete request:
 
-```text id="gd627q"
+```text
 FE EF A2 00 08 52 00 00 00 00 00 00 00 00 52 0D 0A
 ```
 
@@ -519,13 +518,13 @@ FE EF A2 00 08 52 00 00 00 00 00 00 00 00 52 0D 0A
 
 The response payload contains:
 
-```text id="i1xwi8"
+```text
 52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED
 ```
 
 Decoded:
 
-```text id="7qaxfr"
+```text
 payload[0] = response type = 0x52
 payload[1] = RSSI1
 payload[2] = RSSI2
@@ -536,7 +535,7 @@ payload[5] = Connected
 
 Frame:
 
-```text id="pvquja"
+```text
 FE EF A2 00 06
 52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED
 SUM_H SUM_L
@@ -549,7 +548,7 @@ SUM_H SUM_L
 
 A convenient representation:
 
-```c id="930n3t"
+```c
 typedef struct
 {
     uint8_t band;
@@ -568,7 +567,7 @@ typedef struct
 
 Logical layout:
 
-```text id="mf1yw9"
+```text
 Band
 Channel
 Hop
@@ -587,20 +586,20 @@ RSSI bytes can be interpreted as signed 8-bit values.
 
 Example:
 
-```text id="qckkmh"
+```text
 Raw byte:
 A6
 ```
 
 As `int8_t`:
 
-```text id="twsg3g"
+```text
 -90
 ```
 
 Example code:
 
-```c id="ju654k"
+```c
 int8_t rssi =
     (int8_t)payload[1];
 ```
@@ -615,13 +614,13 @@ The DataRate byte is exposed directly as an Mbps value by compatible implementat
 
 Example:
 
-```text id="lqarfu"
+```text
 18
 ```
 
 corresponds to:
 
-```text id="r8j8or"
+```text
 18 Mbps
 ```
 
@@ -633,13 +632,13 @@ Latency is similarly represented directly as a one-byte millisecond value.
 
 Example:
 
-```text id="b0urgk"
+```text
 27
 ```
 
 corresponds to:
 
-```text id="ty1ows"
+```text
 27 ms
 ```
 
@@ -651,7 +650,7 @@ The link state is represented as a one-byte value.
 
 Expected interpretation:
 
-```text id="crcyho"
+```text
 0 = disconnected
 1 = connected
 ```
@@ -662,7 +661,7 @@ Hardware captures are welcome to confirm whether additional values are ever used
 
 # Telemetry parser
 
-```c id="nng6ta"
+```c
 typedef struct
 {
     uint8_t band;
@@ -739,7 +738,7 @@ void vrxProcessPayload(
 
 A practical starting point:
 
-```text id="guzwsd"
+```text
 Channel state (0x51): every 2000 ms
 Link status   (0x52): every 200 ms
 ```
@@ -752,7 +751,7 @@ RSSI, bitrate, and latency are more dynamic.
 
 # STM32 HAL implementation
 
-```c id="vhhd7q"
+```c
 HAL_StatusTypeDef vrxSendPacket(
     UART_HandleTypeDef *uart,
     uint8_t command,
@@ -808,7 +807,7 @@ HAL_StatusTypeDef vrxSendPacket(
 
 Key helper:
 
-```c id="5xlw8o"
+```c
 HAL_StatusTypeDef vrxSendKey(
     UART_HandleTypeDef *uart,
     uint8_t key,
@@ -832,7 +831,7 @@ HAL_StatusTypeDef vrxSendKey(
 
 Examples:
 
-```c id="vdqtzl"
+```c
 vrxSendKey(&huart1, 0x00, 0x00); // UP
 vrxSendKey(&huart1, 0x01, 0x00); // DOWN
 vrxSendKey(&huart1, 0x02, 0x00); // LEFT
@@ -851,13 +850,13 @@ vrxSendKey(&huart1, 0x09, 0x00); // DEBUG
 
 Configure the UART as:
 
-```text id="21mks3"
+```text
 115200 8N1
 ```
 
 Then send:
 
-```text id="233yf2"
+```text
 FE EF 22 00 04 40 00 00 00 00 40 0D 0A
 ```
 
@@ -865,7 +864,7 @@ This is the UP command.
 
 Example:
 
-```c id="4kv4a2"
+```c
 static const uint8_t VRX_UP[] =
 {
     0xFE, 0xEF,
@@ -898,7 +897,7 @@ Raw UART captures from physical VRX hardware would be especially useful.
 
 Please include:
 
-```text id="0h2b9a"
+```text
 VRX model
 VRX firmware version
 test condition
@@ -910,14 +909,14 @@ Suggested tests:
 
 ### No link
 
-```text id="g3a260"
+```text
 VRX powered
 VTX powered off
 ```
 
 ### Strong link
 
-```text id="xb4jkb"
+```text
 VTX close to VRX
 stable video
 ```
@@ -928,7 +927,7 @@ Increase distance or otherwise reduce RF signal safely.
 
 Observe:
 
-```text id="2f3uov"
+```text
 RSSI1
 RSSI2
 DataRate
@@ -940,7 +939,7 @@ Connected
 
 Change:
 
-```text id="iqvv14"
+```text
 Band
 Channel
 Hop
@@ -956,7 +955,7 @@ TX checksum behavior is documented.
 
 Before assuming that VRX replies use exactly the same checksum calculation, compare real captures against:
 
-```c id="y4m57w"
+```c
 uint16_t vrxChecksum(
     const uint8_t *payload,
     uint16_t length)
@@ -974,7 +973,7 @@ During initial testing, do not discard telemetry solely because the checksum doe
 
 Log both:
 
-```text id="njtmcr"
+```text
 received checksum
 calculated checksum
 ```
@@ -987,7 +986,7 @@ This allows the RX algorithm to be determined without losing valid traffic.
 
 ## Remote key
 
-```text id="jvmqrm"
+```text
 CMD = 22
 
 40 KEY ARG 00
@@ -995,7 +994,7 @@ CMD = 22
 
 ## Set channel
 
-```text id="itpvry"
+```text
 CMD = 22
 
 50 BAND CHANNEL HOP 00 00 00 00
@@ -1003,7 +1002,7 @@ CMD = 22
 
 ## Request channel state
 
-```text id="gwtbkt"
+```text
 CMD = A2
 
 51 00 00 00 00 00 00 00
@@ -1011,7 +1010,7 @@ CMD = A2
 
 ## Channel response
 
-```text id="9v1ax9"
+```text
 CMD = A2
 
 51 BAND CHANNEL HOP
@@ -1019,7 +1018,7 @@ CMD = A2
 
 ## Request status
 
-```text id="39v0tv"
+```text
 CMD = A2
 
 52 00 00 00 00 00 00 00
@@ -1027,7 +1026,7 @@ CMD = A2
 
 ## Status response
 
-```text id="jpknw5"
+```text
 CMD = A2
 
 52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED
@@ -1096,7 +1095,7 @@ If you have hardware captures, contributions are welcome.
 
 Suggested layout:
 
-```text id="05icn7"
+```text
 walksnail-vrx-uart/
 │
 ├── README.md
