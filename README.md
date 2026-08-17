@@ -1089,6 +1089,167 @@ If you have hardware captures, contributions are welcome.
 
 ---
 
+# Official CRSF / SBUS pass-through documentation
+
+A separate vendor-provided document describes two officially supported control-signal pass-through modes for the Ascent system:
+
+* CRSF receiver pass-through
+* SBUS pass-through
+
+These functions are related to the overall Ascent data path, but they should **not** be confused with the VRX UART control protocol documented in this repository.
+
+The protocol documented in this repository:
+
+```text
+FE EF CMD LEN_H LEN_L PAYLOAD... SUM_H SUM_L 0D 0A
+```
+
+is used to control and query the VRX itself.
+
+The CRSF and SBUS functions described below transport RC control data through the Ascent system.
+
+## CRSF pass-through
+
+The documented CRSF configuration is:
+
+```text
+Radio
+  │
+  ▼
+ELRS receiver
+  │
+  │ 6-pin connection
+  ▼
+Ascent VRX
+  │
+  │ Ascent RF link
+  ▼
+Ascent GT
+  │
+  │ 2-pin serial connection
+  ▼
+Flight controller UART
+  │
+  └── configured as CRSF receiver
+```
+
+The vendor document specifies:
+
+1. Upgrade the Ascent GT and Ascent VRX to a sufficiently recent firmware version.
+2. Connect the Ascent GT 2-pin port to a flight-controller serial port.
+3. Configure that flight-controller serial port as a CRSF receiver.
+4. Connect an ELRS receiver to the Ascent VRX 6-pin port.
+5. Bind the radio transmitter and ELRS receiver.
+6. Set the transmitter Packet Rate to `50 Hz`.
+7. Enable the receiver function for the corresponding serial port in the ground-station / flight-controller configuration.
+8. Verify that RC channel data is received by the flight controller.
+
+This demonstrates that the Ascent RF link can transport CRSF receiver/control data from the VRX side to the GT side.
+
+## SBUS pass-through
+
+The documented SBUS configuration is:
+
+```text
+Radio SBUS output
+       │
+       ▼
+   Ascent VRX
+       │
+       │ Ascent RF link
+       ▼
+ Ascent GT / VTX
+       │
+       │ SBUS
+       ▼
+Flight controller
+```
+
+The vendor document specifies:
+
+1. Connect the Ascent VRX SBUS port to the radio transmitter's SBUS output.
+2. Set the transmitter Internal RF to `Off`.
+3. Set External RF to `SBUS`.
+4. Configure the flight controller to use an SBUS receiver.
+5. Connect the Ascent GT VTX SBUS port to the flight-controller SBUS input.
+6. Enable the corresponding receiver interface.
+7. Select SBUS and verify that RC control data is received.
+
+## Relationship to the VRX UART protocol
+
+The existence of CRSF and SBUS pass-through provides useful architectural context.
+
+It shows that the Ascent system contains mechanisms for transporting digital control information across the ground-to-air link:
+
+```text
+                     ASCENT SYSTEM
+
+       Ground side                         Air side
+
+ ┌──────────────────────┐            ┌──────────────────────┐
+ │      Ascent VRX      │            │      Ascent GT       │
+ │                      │            │                      │
+ │ CRSF / ELRS input ───┼── RF link ─┼──► CRSF / UART → FC │
+ │                      │            │                      │
+ │ SBUS input ──────────┼── RF link ─┼──► SBUS → FC        │
+ │                      │            │                      │
+ │ VRX control UART     │            │                      │
+ │ FE EF ...            │            │                      │
+ └─────────▲────────────┘            └──────────────────────┘
+           │
+           │
+     External MCU
+ STM32 / ESP32 / etc.
+```
+
+However, there is currently **no evidence that the CRSF/SBUS pass-through interface and the `FE EF` VRX control interface are the same physical or logical protocol**.
+
+In particular, the vendor document does not specify for the CRSF pass-through interface:
+
+* UART baud rate
+* electrical voltage levels
+* complete 6-pin pinout
+* packet framing below CRSF
+* whether the VRX internally encapsulates CRSF
+* whether the 6-pin interface is shared with the VRX control UART
+* any relationship to the `FE EF` command protocol
+
+Therefore these interfaces are intentionally documented separately.
+
+## Firmware-version discrepancy in the source document
+
+The supplied document contains an apparent version-number inconsistency.
+
+The Chinese instructions state:
+
+```text
+16.4.2 以上版本
+```
+
+which means version `16.4.2` or later.
+
+The English translation in the same document states:
+
+```text
+16.2.1 or higher
+```
+
+The discrepancy appears in both the CRSF and SBUS sections.
+
+Until this is clarified by the vendor or verified on hardware, this repository does not assume which of those two version numbers is correct.
+
+## Why this matters
+
+The official pass-through documentation independently confirms an important part of the Ascent architecture:
+
+> The Ascent ground/air link is capable of transporting digital RC control data in addition to the video link.
+
+This is consistent with the system architecture observed during interoperability research, but it does **not** by itself validate the reverse-engineered VRX UART frame format, commands, checksum, or telemetry documented elsewhere in this repository.
+
+Those findings remain based on independent protocol analysis and hardware/software interoperability research.
+
+---
+
 # Repository structure
 
 Suggested layout:
