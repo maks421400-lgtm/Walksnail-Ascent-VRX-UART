@@ -5,9 +5,11 @@ Open documentation and reference implementation of the **Walksnail VRX UART cont
 
 The goal of this project is to make Walksnail VRX hardware easier to integrate with custom controllers, STM32 projects, ground stations, antenna trackers, test equipment, and other user-built systems.
 
-The protocol information below was obtained through independent interoperability research and analysis of compatible implementations.
+The primary source for the control protocol is the Chinese serial-command document supplied by the repository maintainer from the developers' firmware package, reviewed together with its English counterpart, **Serial Port Command Software Function Description.docx**. The Chinese file's supplied filename is garbled; it is identified by its opening sentence: 本文档说明使用串口命令方式，实现按键的各项功能.
 
-Where possible, confirmed protocol behavior is separated from details that still require validation on physical hardware.
+These documents take precedence over earlier implementation-derived assumptions where their descriptions are clear. They are two versions of the same material, not independent hardware validation. The original files are not currently included in this repository.
+
+The documentation distinguishes source-described behavior, implementation-derived assumptions, and unresolved source inconsistencies. No raw hardware captures were present in `captures/` at the time of this review (2026-10-27).
 
 ---
 
@@ -22,8 +24,8 @@ Currently documented:
 * remote-control key commands
 * UP / DOWN / LEFT / RIGHT
 * ENTER / BACK
-* PAIR / RECORD
-* FORCE720 / DEBUG
+* PAIR / UPGRADE / RECORD
+* Force 720p60 / Unlock Debug3 mode
 * channel control
 * Band / Channel / Hop
 * VRX status requests
@@ -36,6 +38,8 @@ Currently documented:
 ---
 
 # UART configuration
+
+The existing implementation uses the settings below. The supplied serial-command documents do **not** specify baud rate, parity, stop bits, electrical levels, or pinout; these settings still require confirmation for the target hardware and firmware.
 
 ```text
 115200 baud
@@ -72,7 +76,7 @@ Field layout:
 +------+------+-----+-------+-------+-------------+-------+-------+------+------+
 ```
 
-The payload length is encoded as an unsigned 16-bit **big-endian** integer.
+The source defines a two-byte payload length and a payload range of 0–65535 bytes. Its packet examples encode length in **big-endian** order. This field capacity is not a guarantee that a device accepts arbitrary payload sizes; the reference library limits payloads to 64 bytes.
 
 Example for a four-byte payload:
 
@@ -88,9 +92,17 @@ payload_length + 9
 
 ---
 
+# Command byte and direction ambiguity
+
+The source describes command values 0x00–0x7F and assigns bit 7 to direction: 0 for host→SoC and 1 for SoC→host. However, the same source explicitly gives **0xA2 for host-issued queries** (`0x51` and `0x52`), which has bit 7 set.
+
+Preserve the documented query packets below. Do not clear bit 7 or derive reply command values solely from the direction description until this inconsistency is resolved by hardware captures or vendor clarification.
+
+---
+
 # Checksum
 
-The checksum used for transmitted commands is a simple unsigned 16-bit sum of the payload bytes.
+The source defines the checksum generally as the accumulated sum of payload bytes, without specifying a separate RX algorithm. The two-byte reference implementation uses `sum(payload) & 0xFFFF`. Source TX examples agree with this rule; actual RX behavior remains to be checked against captures.
 
 ```c
 uint16_t checksum = 0;
@@ -182,13 +194,15 @@ CMD = 0x22
 with a four-byte payload:
 
 ```text
-40 KEY ARG 00
+40 KEY PRESS_TYPE 00
 ```
+
+The source names these fields `cmd_type` (also called `key_type`), `key_num`, `press_type`, and `rsv`. The helpers retain the parameter name `argument` for `press_type`. Only the combinations below are documented; `press_type` is not established as a universal short/long-press flag. The reserved byte is zero in every supplied key example.
 
 Generic key packet:
 
 ```text
-FE EF 22 00 04 40 KEY ARG 00 SUM_H SUM_L 0D 0A
+FE EF 22 00 04 40 KEY PRESS_TYPE 00 SUM_H SUM_L 0D 0A
 ```
 
 Helper:
@@ -211,7 +225,7 @@ void sendVrxKey(uint8_t key, uint8_t argument)
 
 # Key codes
 
-| Function |    KEY |    ARG |
+| Function |    KEY | PRESS_TYPE |
 | -------- | -----: | -----: |
 | UP       | `0x00` | `0x00` |
 | DOWN     | `0x01` | `0x00` |
@@ -219,12 +233,15 @@ void sendVrxKey(uint8_t key, uint8_t argument)
 | RIGHT    | `0x03` | `0x00` |
 | ENTER    | `0x04` | `0x00` |
 | PAIR     | `0x05` | `0x00` |
+| UPGRADE  | `0x05` | `0x01` |
 | RECORD   | `0x06` | `0x00` |
 | BACK     | `0x07` | `0x00` |
-| FORCE720 | `0x07` | `0x01` |
-| DEBUG    | `0x09` | `0x00` |
+| Force 720p60 | `0x07` | `0x01` |
+| Unlock Debug3 mode | `0x09` | `0x00` |
 
-A possible command associated with key code `0x08` has not yet been sufficiently verified and is therefore intentionally omitted.
+The source explicitly marks key code `0x08` as **invalid**, with no valid `press_type` specified.
+
+UPGRADE is the documented upgrade-key action. The document does not describe firmware transfer, prerequisites, or recovery behavior.
 
 ---
 
@@ -266,6 +283,12 @@ FE EF 22 00 04 40 04 00 00 00 44 0D 0A
 FE EF 22 00 04 40 05 00 00 00 45 0D 0A
 ```
 
+## UPGRADE
+
+```text
+FE EF 22 00 04 40 05 01 00 00 46 0D 0A
+```
+
 ## RECORD
 
 ```text
@@ -278,13 +301,13 @@ FE EF 22 00 04 40 06 00 00 00 46 0D 0A
 FE EF 22 00 04 40 07 00 00 00 47 0D 0A
 ```
 
-## FORCE720
+## Force 720p60
 
 ```text
 FE EF 22 00 04 40 07 01 00 00 48 0D 0A
 ```
 
-## DEBUG
+## Unlock Debug3 mode
 
 ```text
 FE EF 22 00 04 40 09 00 00 00 49 0D 0A
@@ -339,13 +362,15 @@ The checksum is:
 
 # Band representation
 
-Known values:
+Documented values (other band values are invalid):
 
 ```text
 0 = Band A
 1 = Band B
 2 = Band C
 ```
+
+The source lists channel indexes `0…16`; its examples establish zero-based numbering (CH1 → 0, CH13 → 12). It does not establish that every band supports every index, or reconcile this range with the implementation-derived frequency tables below.
 
 Channels are represented internally as zero-based indexes.
 
@@ -360,8 +385,8 @@ raw channel 1 = displayed channel 2
 Hop:
 
 ```text
-0 = Off
-1 = On
+0 = Fixed frequency
+1 = Frequency hopping
 ```
 
 ---
@@ -370,7 +395,7 @@ Hop:
 
 The following frequency tables were identified in a compatible implementation.
 
-They should be considered implementation data rather than a universal guarantee for every VRX model or firmware version.
+They are absent from the supplied serial-command documents and should be considered implementation data rather than a universal guarantee for every VRX model or firmware version.
 
 ## Band A
 
@@ -433,308 +458,67 @@ CH13  5839 MHz
 
 ---
 
-# Telemetry
+# Telemetry queries and unresolved reply layouts
 
-Two request types are currently documented:
+The source specifies eight-byte query payloads under command `0xA2`:
 
-```text
-0x51 = Channel / frequency state
-0x52 = Link status
-```
+| Operation | Payload |
+| --- | --- |
+| Read Band / Channel / Hop | `51 00 00 00 00 00 00 00` |
+| Read wireless status | `52 00 00 00 00 00 00 00` |
 
-Requests use:
-
-```text
-CMD = 0xA2
-```
-
----
-
-# Request channel state
-
-Payload:
-
-```text
-51 00 00 00 00 00 00 00
-```
-
-Complete packet:
+Complete requests:
 
 ```text
 FE EF A2 00 08 51 00 00 00 00 00 00 00 00 51 0D 0A
-```
-
----
-
-# Channel-state response
-
-The response payload has four bytes:
-
-```text
-51 BAND CHANNEL HOP
-```
-
-Decoded:
-
-```text
-payload[0] = response type = 0x51
-payload[1] = Band
-payload[2] = Channel
-payload[3] = Hop
-```
-
-Frame shape:
-
-```text
-FE EF A2 00 04
-51 BAND CHANNEL HOP
-SUM_H SUM_L
-0D 0A
-```
-
-The reply checksum behavior should be verified against raw hardware captures before strict validation is enabled.
-
----
-
-# Request link status
-
-Payload:
-
-```text
-52 00 00 00 00 00 00 00
-```
-
-Complete request:
-
-```text
 FE EF A2 00 08 52 00 00 00 00 00 00 00 00 52 0D 0A
 ```
 
----
+The wireless-operation table describes `cmd_type` (one byte) plus `value` (seven bytes), and lists data length 8. It provides query packets but no complete RX examples that establish actual reply lengths or command bytes. In particular, it does **not** establish the four-byte and six-byte reply payloads assumed by the existing library.
 
-# Link-status response
+## Channel fields described by the source
 
-The response payload contains:
+| Source index | Meaning |
+| --- | --- |
+| `value[0]` | Band: 0=A, 1=B, 2=C; other values invalid |
+| `value[1]` | Channel index: documented range 0…16, subject to device/band validation |
+| `value[2]` | Hop: 0=fixed frequency, 1=frequency hopping |
 
-```text
-52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED
-```
+## Wireless-status fields described by the source
 
-Decoded:
+Both language versions contain the same incomplete indexing:
 
-```text
-payload[0] = response type = 0x52
-payload[1] = RSSI1
-payload[2] = RSSI2
-payload[3] = DataRate
-payload[4] = Latency
-payload[5] = Connected
-```
+| Source index | Meaning |
+| --- | --- |
+| `value[0]` | RSSI1 |
+| `value[1]` | RSSI2 |
+| `value[2]` | Not described |
+| `value[3]` | Data rate, Mbps |
+| `value[4]` | Delay, ms |
+| `value[5]` | BB connect; the explanation of value 0 is unfinished |
+| `value[6]` | Not described |
 
-Frame:
+These are **value-array indexes**, not full-payload offsets: if the stated `cmd_type + value` structure applies to a reply, `value[0]` would follow `payload[0]`. That conditional mapping is not a verified reply layout. Do not silently remove the missing index, invent a reserved field, or infer an exact RX length.
 
-```text
-FE EF A2 00 06
-52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED
-SUM_H SUM_L
-0D 0A
-```
+The source confirms the Mbps and ms units, but not the current decoder's offsets. It does not specify RSSI signedness, scale, or dBm units. Interpreting `0xA6` as signed eight-bit gives −90 mathematically; it does not establish that the device reports −90 dBm. The mapping `Connected: 0=disconnected, 1=connected` remains an implementation assumption because the source's description is incomplete.
 
----
+## Existing reference decoder limitations
 
-# Telemetry structure
+[`src/vrx_protocol.c`](src/vrx_protocol.c) currently accepts:
 
-A convenient representation:
+* `0x51`: exactly four payload bytes, interpreted as `51 BAND CHANNEL HOP`.
+* `0x52`: exactly six payload bytes, interpreted as `52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED`, with signed eight-bit RSSI.
+* The STM32 example additionally filters incoming frames to command `0xA2`.
 
-```c
-typedef struct
-{
-    uint8_t band;
-    uint8_t channel;
-    uint8_t hop;
+These are legacy implementation assumptions, **not source-confirmed wire formats**. The status offsets differ from the literal source table, and replies of other lengths are rejected by the decoder. This documentation update does not change the decoder based on an ambiguous table.
 
-    int8_t rssi1;
-    int8_t rssi2;
-
-    uint8_t dataRate;
-    uint8_t latency;
-    uint8_t connected;
-
-} VrxTelemetry;
-```
-
-Logical layout:
-
-```text
-Band
-Channel
-Hop
-RSSI1
-RSSI2
-DataRate
-Latency
-Connected
-```
-
----
-
-# RSSI
-
-RSSI bytes can be interpreted as signed 8-bit values.
-
-Example:
-
-```text
-Raw byte:
-A6
-```
-
-As `int8_t`:
-
-```text
--90
-```
-
-Example code:
-
-```c
-int8_t rssi =
-    (int8_t)payload[1];
-```
-
-The exact physical interpretation should still be verified with RF testing.
-
----
-
-# Data Rate
-
-The DataRate byte is exposed directly as an Mbps value by compatible implementations.
-
-Example:
-
-```text
-18
-```
-
-corresponds to:
-
-```text
-18 Mbps
-```
-
----
-
-# Latency
-
-Latency is similarly represented directly as a one-byte millisecond value.
-
-Example:
-
-```text
-27
-```
-
-corresponds to:
-
-```text
-27 ms
-```
-
----
-
-# Connected
-
-The link state is represented as a one-byte value.
-
-Expected interpretation:
-
-```text
-0 = disconnected
-1 = connected
-```
-
-Hardware captures are welcome to confirm whether additional values are ever used.
-
----
-
-# Telemetry parser
-
-```c
-typedef struct
-{
-    uint8_t band;
-    uint8_t channel;
-    uint8_t hop;
-
-    int8_t rssi1;
-    int8_t rssi2;
-
-    uint8_t dataRate;
-    uint8_t latency;
-    uint8_t connected;
-
-} VrxTelemetry;
-
-
-static VrxTelemetry vrxTelemetry;
-
-
-void vrxProcessPayload(
-    const uint8_t *payload,
-    uint16_t length)
-{
-    if (payload == NULL || length == 0)
-        return;
-
-    switch (payload[0])
-    {
-        case 0x51:
-
-            if (length == 4)
-            {
-                vrxTelemetry.band =
-                    payload[1];
-
-                vrxTelemetry.channel =
-                    payload[2];
-
-                vrxTelemetry.hop =
-                    payload[3];
-            }
-
-            break;
-
-
-        case 0x52:
-
-            if (length == 6)
-            {
-                vrxTelemetry.rssi1 =
-                    (int8_t)payload[1];
-
-                vrxTelemetry.rssi2 =
-                    (int8_t)payload[2];
-
-                vrxTelemetry.dataRate =
-                    payload[3];
-
-                vrxTelemetry.latency =
-                    payload[4];
-
-                vrxTelemetry.connected =
-                    payload[5];
-            }
-
-            break;
-    }
-}
-```
+Capture complete raw RX frames, their declared lengths, command bytes, and checksum fields before relying on decoded telemetry. Preserve raw bytes alongside any experimental decoding.
 
 ---
 
 # Suggested polling interval
 
-A practical starting point:
+The following intervals are implementation suggestions, not timing requirements from the supplied documents:
 
 ```text
 Channel state (0x51): every 2000 ms
@@ -836,17 +620,18 @@ vrxSendKey(&huart1, 0x02, 0x00); // LEFT
 vrxSendKey(&huart1, 0x03, 0x00); // RIGHT
 vrxSendKey(&huart1, 0x04, 0x00); // ENTER
 vrxSendKey(&huart1, 0x05, 0x00); // PAIR
+vrxSendKey(&huart1, 0x05, 0x01); // UPGRADE key
 vrxSendKey(&huart1, 0x06, 0x00); // RECORD
 vrxSendKey(&huart1, 0x07, 0x00); // BACK
-vrxSendKey(&huart1, 0x07, 0x01); // FORCE720
-vrxSendKey(&huart1, 0x09, 0x00); // DEBUG
+vrxSendKey(&huart1, 0x07, 0x01); // Force 720p60
+vrxSendKey(&huart1, 0x09, 0x00); // Unlock Debug3 mode
 ```
 
 ---
 
 # Minimal hardware test
 
-Configure the UART as:
+After checking that these implementation-derived settings match your device, configure the UART as:
 
 ```text
 115200 8N1
@@ -949,9 +734,7 @@ and capture response type `0x51`.
 
 # RX checksum validation
 
-TX checksum behavior is documented.
-
-Before assuming that VRX replies use exactly the same checksum calculation, compare real captures against:
+The source defines one payload-sum checksum rule for the frame format. No different RX checksum is documented. Verify that actual firmware replies conform to that rule by comparing raw captures against:
 
 ```c
 uint16_t vrxChecksum(
@@ -976,7 +759,7 @@ received checksum
 calculated checksum
 ```
 
-This allows the RX algorithm to be determined without losing valid traffic.
+Keep checksum-mismatched frames as diagnostic evidence, not validated telemetry. This distinguishes source errors, firmware differences, framing problems, and corrupted traffic.
 
 ---
 
@@ -987,7 +770,7 @@ This allows the RX algorithm to be determined without losing valid traffic.
 ```text
 CMD = 22
 
-40 KEY ARG 00
+40 KEY PRESS_TYPE 00
 ```
 
 ## Set channel
@@ -1008,11 +791,9 @@ CMD = A2
 
 ## Channel response
 
-```text
-CMD = A2
+No complete source RX example is available. The library's four-byte layout is provisional; see [Telemetry queries and unresolved reply layouts](#telemetry-queries-and-unresolved-reply-layouts).
 
-51 BAND CHANNEL HOP
-```
+---
 
 ## Request status
 
@@ -1024,72 +805,55 @@ CMD = A2
 
 ## Status response
 
-```text
-CMD = A2
+No complete source RX example is available. The library's six-byte layout conflicts with the literal source indexes; see [Wireless-status fields described by the source](#wireless-status-fields-described-by-the-source).
 
-52 RSSI1 RSSI2 DATARATE LATENCY CONNECTED
+---
+
+# Evidence status
+
+## Described by the supplied serial-command documents
+
+* Frame header, command position, two-byte payload length, two-byte payload sum, and terminator.
+* Big-endian length/checksum representation in the supplied packet examples.
+* Key combinations including UPGRADE, Force 720p60, Unlock Debug3, and invalid key 0x08.
+* Set-channel payload, Band IDs, zero-based channel examples, and fixed/hopping mode values.
+* Eight-byte query packets for 0x51 and 0x52.
+* Wireless-status field names and Mbps/ms units, with incomplete field indexing.
+
+## Still requiring clarification or hardware evidence
+
+* UART settings, voltage levels, and physical pinout.
+* Command bit-7 direction semantics versus documented 0xA2 queries.
+* Actual reply command bytes, lengths, status-field offsets, and checksum conformance.
+* RSSI signedness/scale and BB-connect value meanings.
+* Per-band channel limits and frequency tables.
+* Firmware/model differences, command timing, and upgrade-key behavior.
+
+Documentation agreement is not a substitute for a captured device response. The `captures/` directory currently contains collection instructions rather than hardware logs.
+
+---
+
+# Source errata and corrected channel examples
+
+Both language versions have the direction-bit ambiguity and incomplete status table described above. The English version also contains one extra `00` in each of its Band B CH13 and Band C CH3 examples, producing 18-byte packets despite a declared payload length of 8 (which requires 17 total bytes).
+
+Use the Chinese source's internally consistent examples:
+
+```text
+Band B CH13, fixed frequency:
+FE EF 22 00 08 50 01 0C 00 00 00 00 00 00 5D 0D 0A
+
+Band C CH3, fixed frequency:
+FE EF 22 00 08 50 02 02 00 00 00 00 00 00 54 0D 0A
 ```
 
----
-
-# Confirmed protocol behavior
-
-Currently considered confirmed:
-
-* UART `115200 8N1`
-* `FE EF` frame header
-* command byte position
-* big-endian 16-bit payload length
-* TX additive payload checksum
-* big-endian TX checksum
-* `0D 0A` terminator
-* command `0x22`
-* key prefix `0x40`
-* UP
-* DOWN
-* LEFT
-* RIGHT
-* ENTER
-* PAIR
-* RECORD
-* BACK
-* FORCE720
-* DEBUG
-* channel-control prefix `0x50`
-* query command `0xA2`
-* response/request identifiers `0x51` and `0x52`
-* Band
-* Channel
-* Hop
-* RSSI1
-* RSSI2
-* DataRate
-* Latency
-* Connected
-* Band IDs A/B/C
-* zero-based internal channel numbering
-* Hop Off/On representation
-
----
-
-# Still being verified
-
-Open questions:
-
-* checksum algorithm used by VRX replies
-* exact physical RSSI interpretation across hardware versions
-* additional `Connected` states, if any
-* additional undocumented response types
-* additional key codes
-* differences between VRX firmware versions
-* differences between VRX hardware generations
-* complete verification of frequency tables
-
-If you have hardware captures, contributions are welcome.
+All 20 complete Chinese-source packet examples match their declared lengths and payload sums. In the English version, 18 of 20 do; the two exceptions are above. These checks verify packet arithmetic, not device execution.
 
 ---
 
 # Official CRSF / SBUS pass-through documentation
+
+**Source scope:** This existing section summarizes a separate pass-through document. That document was not among the two serial-command files reviewed for this update, so its instructions and firmware-version discrepancy were not independently rechecked here.
 
 A separate vendor-provided document describes two officially supported control-signal pass-through modes for the Ascent system:
 
@@ -1246,7 +1010,7 @@ The official pass-through documentation independently confirms an important part
 
 This is consistent with the system architecture observed during interoperability research, but it does **not** by itself validate the reverse-engineered VRX UART frame format, commands, checksum, or telemetry documented elsewhere in this repository.
 
-Those findings remain based on independent protocol analysis and hardware/software interoperability research.
+The control commands are now cross-checked against the supplied serial-command documents; the unresolved reply behavior still requires hardware evidence.
 
 ---
 
