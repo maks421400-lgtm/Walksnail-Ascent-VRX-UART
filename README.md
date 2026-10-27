@@ -1,6 +1,5 @@
 # Walksnail Ascent VRX UART Protocol
 
-
 Open documentation and reference implementation of the **Walksnail VRX UART control and telemetry protocol**.
 
 The goal of this project is to make Walksnail VRX hardware easier to integrate with custom controllers, STM32 projects, ground stations, antenna trackers, test equipment, and other user-built systems.
@@ -34,6 +33,8 @@ Currently documented:
 * Latency
 * Link state
 * STM32-compatible reference implementation
+* Related VRX Max UDP control and OSD interfaces (model-specific, third-party sources)
+* Distinction between the control protocol and OTRA file-transfer research
 
 ---
 
@@ -42,16 +43,7 @@ Currently documented:
 The existing implementation uses the settings below. The supplied serial-command documents do **not** specify baud rate, parity, stop bits, electrical levels, or pinout; these settings still require confirmation for the target hardware and firmware.
 
 ```text
-115200 baud
-8 data bits
-No parity
-1 stop bit
-```
-
-In short:
-
-```text
-115200 8N1
+115200 8N1 (8 data bits, no parity, 1 stop bit)
 ```
 
 GPIO/pin assignments depend on your own hardware.
@@ -152,6 +144,8 @@ Checksum bytes:
 
 # Generic packet transmitter
 
+The inline C snippets illustrate packet construction; they are not copies of the maintained library API and do not include all of its argument checks. For integration, use [`src/vrx_protocol.h`](src/vrx_protocol.h), [`src/vrx_protocol.c`](src/vrx_protocol.c), and the [STM32 example](examples/stm32_hal/main_example.c). The library rejects key `0x08` and out-of-range Band/Channel/Hop arguments.
+
 ```c
 void sendVrxPacket(
     uint8_t command,
@@ -197,7 +191,7 @@ with a four-byte payload:
 40 KEY PRESS_TYPE 00
 ```
 
-The source names these fields `cmd_type` (also called `key_type`), `key_num`, `press_type`, and `rsv`. The helpers retain the parameter name `argument` for `press_type`. Only the combinations below are documented; `press_type` is not established as a universal short/long-press flag. The reserved byte is zero in every supplied key example.
+The source names these fields `cmd_type` (also called `key_type`), `key_num`, `press_type`, and `rsv`. The inline examples below call this parameter `argument`; the maintained library uses `press_type`. Only the combinations below are documented; `press_type` is not established as a universal short/long-press flag. The reserved byte is zero in every supplied key example.
 
 Generic key packet:
 
@@ -372,9 +366,7 @@ Documented values (other band values are invalid):
 
 The source lists channel indexes `0…16`; its examples establish zero-based numbering (CH1 → 0, CH13 → 12). It does not establish that every band supports every index, or reconcile this range with the implementation-derived frequency tables below.
 
-Channels are represented internally as zero-based indexes.
-
-Therefore:
+For example:
 
 ```text
 raw channel 0 = displayed channel 1
@@ -532,6 +524,8 @@ RSSI, bitrate, and latency are more dynamic.
 ---
 
 # STM32 HAL implementation
+
+This standalone illustration uses a 256-byte frame buffer and a 247-byte payload limit. The maintained portable library instead limits payloads to 64 bytes; these are software buffer limits, not conflicting device specifications. Its HAL integration is in [`examples/stm32_hal/main_example.c`](examples/stm32_hal/main_example.c).
 
 ```c
 HAL_StatusTypeDef vrxSendPacket(
@@ -851,26 +845,18 @@ All 20 complete Chinese-source packet examples match their declared lengths and 
 
 ---
 
-# Official CRSF / SBUS pass-through documentation
+# CRSF / SBUS pass-through from a separate source
 
-**Source scope:** This existing section summarizes a separate pass-through document. That document was not among the two serial-command files reviewed for this update, so its instructions and firmware-version discrepancy were not independently rechecked here.
+**Source scope:** This section preserves an earlier summary of a document described as vendor-provided. That separate document is not included in this repository and was unavailable for the current review. Its instructions and firmware-version discrepancy therefore remain attributed to that earlier summary, rather than independently verified here.
 
-A separate vendor-provided document describes two officially supported control-signal pass-through modes for the Ascent system:
+The earlier summary describes two control-signal pass-through modes for the Ascent system:
 
 * CRSF receiver pass-through
 * SBUS pass-through
 
 These functions are related to the overall Ascent data path, but they should **not** be confused with the VRX UART control protocol documented in this repository.
 
-The protocol documented in this repository:
-
-```text
-FE EF CMD LEN_H LEN_L PAYLOAD... SUM_H SUM_L 0D 0A
-```
-
-is used to control and query the VRX itself.
-
-The CRSF and SBUS functions described below transport RC control data through the Ascent system.
+The [control frame format](#packet-format) operates the VRX itself. The CRSF and SBUS paths below carry RC control data through the RF link to the flight controller.
 
 ## CRSF pass-through
 
@@ -897,7 +883,7 @@ Flight controller UART
   └── configured as CRSF receiver
 ```
 
-The vendor document specifies:
+According to the earlier source summary:
 
 1. Upgrade the Ascent GT and Ascent VRX to a sufficiently recent firmware version.
 2. Connect the Ascent GT 2-pin port to a flight-controller serial port.
@@ -907,8 +893,6 @@ The vendor document specifies:
 6. Set the transmitter Packet Rate to `50 Hz`.
 7. Enable the receiver function for the corresponding serial port in the ground-station / flight-controller configuration.
 8. Verify that RC channel data is received by the flight controller.
-
-This demonstrates that the Ascent RF link can transport CRSF receiver/control data from the VRX side to the GT side.
 
 ## SBUS pass-through
 
@@ -929,7 +913,7 @@ Radio SBUS output
 Flight controller
 ```
 
-The vendor document specifies:
+According to the earlier source summary:
 
 1. Connect the Ascent VRX SBUS port to the radio transmitter's SBUS output.
 2. Set the transmitter Internal RF to `Off`.
@@ -941,34 +925,9 @@ The vendor document specifies:
 
 ## Relationship to the VRX UART protocol
 
-The existence of CRSF and SBUS pass-through provides useful architectural context.
+The paths above describe RC data transport. The Max-specific section below additionally describes a control command that selects CRSF or OSD mode. Selecting a mode through the control protocol does not make the transported RC/OSD data use that same protocol, nor does it establish a shared physical port.
 
-It shows that the Ascent system contains mechanisms for transporting digital control information across the ground-to-air link:
-
-```text
-                     ASCENT SYSTEM
-
-       Ground side                         Air side
-
- ┌──────────────────────┐            ┌──────────────────────┐
- │      Ascent VRX      │            │      Ascent GT       │
- │                      │            │                      │
- │ CRSF / ELRS input ───┼── RF link ─┼──► CRSF / UART → FC │
- │                      │            │                      │
- │ SBUS input ──────────┼── RF link ─┼──► SBUS → FC        │
- │                      │            │                      │
- │ VRX control UART     │            │                      │
- │ FE EF ...            │            │                      │
- └─────────▲────────────┘            └──────────────────────┘
-           │
-           │
-     External MCU
- STM32 / ESP32 / etc.
-```
-
-However, there is currently **no evidence that the CRSF/SBUS pass-through interface and the `FE EF` VRX control interface are the same physical or logical protocol**.
-
-In particular, the vendor document does not specify for the CRSF pass-through interface:
+The earlier pass-through summary does not establish the following for the CRSF interface:
 
 * UART baud rate
 * electrical voltage levels
@@ -982,7 +941,7 @@ Therefore these interfaces are intentionally documented separately.
 
 ## Firmware-version discrepancy in the source document
 
-The supplied document contains an apparent version-number inconsistency.
+The earlier summary records an apparent version-number inconsistency in the separate pass-through document.
 
 The Chinese instructions state:
 
@@ -1001,16 +960,6 @@ The English translation in the same document states:
 The discrepancy appears in both the CRSF and SBUS sections.
 
 Until this is clarified by the vendor or verified on hardware, this repository does not assume which of those two version numbers is correct.
-
-## Why this matters
-
-The official pass-through documentation independently confirms an important part of the Ascent architecture:
-
-> The Ascent ground/air link is capable of transporting digital RC control data in addition to the video link.
-
-This is consistent with the system architecture observed during interoperability research, but it does **not** by itself validate the reverse-engineered VRX UART frame format, commands, checksum, or telemetry documented elsewhere in this repository.
-
-The control commands are now cross-checked against the supplied serial-command documents; the unresolved reply behavior still requires hardware evidence.
 
 ---
 
@@ -1039,7 +988,7 @@ For integration, keep the two receive paths separate. The referenced OSD impleme
 
 ## Additional commands implemented by the Max client
 
-The following are **implementation-derived Max UDP commands**, not additions to this repository's verified UART command set. Their construction is visible in [`build_command_payload()` and `build_set_mode_packet()`](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/udp_vrx_max_client.py).
+The following are **implementation-derived Max UDP commands**, not additions to the UART command set described by the supplied serial-command documents. Their construction is visible in [`build_command_payload()` and `build_set_mode_packet()`](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/udp_vrx_max_client.py).
 
 | Operation | Outer command | Payload | Implementation notes |
 | --- | --- | --- | --- |
@@ -1082,25 +1031,21 @@ OTRA packets must not be passed to the `FE EF` control parser. The Upgrade key d
 
 # Repository structure
 
-Suggested layout:
+Current layout:
 
 ```text
 walksnail-vrx-uart/
-│
 ├── README.md
 ├── LICENSE
-│
 ├── src/
 │   ├── vrx_protocol.c
 │   └── vrx_protocol.h
-│
 ├── examples/
-│   ├── stm32_hal/
-│   └── arduino/
-│
-├── docs/
-│   └── telemetry.md
-│
+│   └── stm32_hal/
+│       └── main_example.c
+├── tests/
+│   ├── README.md
+│   └── test_tx.c
 └── captures/
     └── README.md
 ```
