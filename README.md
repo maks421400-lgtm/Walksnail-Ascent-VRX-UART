@@ -1014,6 +1014,72 @@ The control commands are now cross-checked against the supplied serial-command d
 
 ---
 
+# Related Ascent VRX Max interfaces and the separate OTRA protocol
+
+## Scope and evidence
+
+TelaMechanica's [Ascent VRX Max UDP client](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/README.md) explicitly limits its UDP protocol to **Ascent VRX Max**. The details below describe that third-party implementation and its accompanying documents, rather than a hardware validation performed by this project. Links identify the source revisions reviewed for this addition.
+
+Similar framing does not establish that every Max UDP command is supported by the control UART, by the original Ascent VRX, or by every firmware version. These sources do not establish a shared physical port or pinout. The serial-command documents remain the primary source for the control commands documented above.
+
+## Control and OSD over UDP
+
+The [client implementation](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/udp_vrx_max_client.py) defines these default device endpoints:
+
+| Connection profile | Device IP | Control UDP port | OSD UDP port |
+| --- | --- | --- | --- |
+| RJ45 Ethernet | `192.168.1.100` | `9001` | `9200` |
+| USB-C network | `192.168.3.102` | `9001` | `9200` |
+
+These are client defaults, not discovery results or universal device settings. USB-C here refers to a network interface, not a USB serial port.
+
+The control client sends one `FE EF … 0D 0A` frame per UDP datagram, using a two-byte big-endian payload length and a two-byte big-endian payload sum. The OSD channel is separate: it receives MSP v1/v2 traffic, including MSP DisplayPort, rather than the VRX control frame format. See the [control/OSD channel description](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/UserManuals/Description%20of%20Ctrl%20and%20OSD%20UDP%20Channels.md).
+
+For integration, keep the two receive paths separate. The referenced OSD implementation reassembles MSP frames across UDP datagrams before parsing them; UDP datagram boundaries are not assumed to be MSP frame boundaries.
+
+## Additional commands implemented by the Max client
+
+The following are **implementation-derived Max UDP commands**, not additions to this repository's verified UART command set. Their construction is visible in [`build_command_payload()` and `build_set_mode_packet()`](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/udp_vrx_max_client.py).
+
+| Operation | Outer command | Payload | Implementation notes |
+| --- | --- | --- | --- |
+| Get power index | `0xA2` | `53 00 00 00 00 00 00 00` | Client interprets the result as a power index and a four-byte bitmap of settable indexes. |
+| Set power index | `0x22` | `54 INDEX 00 00 00 00 00 00` | CLI accepts indexes 0–19; this does not establish an index-to-milliwatt mapping or support for every index on a device. |
+| Switch passthrough/output mode | `0x23` | `02 MODE 00 00 00` | CLI exposes CRSF (`MODE=2`) and OSD (`MODE=5`). |
+
+Other mode names in the source enum are implementation declarations, not evidence that all modes work on every device. This section does not change the existing UART library or resolve its open reply-format questions.
+
+The Python OSD startup sequence starts both sockets, sends the OSD mode switch on port 9001, waits 500 ms, then sends probe bytes `31 32 33 34` to port 9200. Treat this as the client's startup procedure, not a proven minimum delay or universal handshake.
+
+## Reported behavior and source inconsistencies
+
+The [Max troubleshooting guide](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/UserManuals/VRX_Troubleshooting_Guide_EN_CN.md) reports that key simulation does not return an ACK and that Force 720p60 restarts the VRX to apply the output setting. Consequently, missing key-command acknowledgments alone should not be treated as evidence of failure in that described setup, and a Force 720p60 action may temporarily interrupt communication. These are source-reported behaviors, not guarantees for every UART device or firmware.
+
+Some accompanying documentation conflicts with the implementation:
+
+* The troubleshooting guide lists `192.169.*` endpoints, whereas the README and Python profiles use `192.168.*`. The table above follows the actual client profiles.
+* The [packet summary](https://github.com/TelaMechanica/Caddx_vrx_max_udp_protocol/blob/f5cda0a755ff804bc4332e29a14f01b20a66bbde/UserManuals/UART_Protocol_Packet_Summary.md) contains an UP example with checksum `04 00` and tail `D0 A0`. Those contradict its own framing rules and the client, which use `00 40` and `0D 0A` for that command. Do not copy those malformed examples.
+* The channel description mentions a `$MSP` probe in one startup path, while the Python client uses `31 32 33 34`. The startup description above follows the Python implementation.
+
+These inconsistencies are why this section cites concrete implementations and keeps model/transport limitations explicit.
+
+## OTRA is a separate transfer protocol
+
+TelaMechanica also publishes [Ascent VRX rooting research](https://github.com/TelaMechanica/Walksnail-Ascent-FPV-VRX-Rooting-Exploit/blob/488bcf06a28bd6788b6b53e99bdbcc6eee11a9af/README.md). Its [serial-transfer implementation](https://github.com/TelaMechanica/Walksnail-Ascent-FPV-VRX-Rooting-Exploit/blob/488bcf06a28bd6788b6b53e99bdbcc6eee11a9af/exploit.py) uses a different protocol:
+
+| Property | VRX control protocol described here | OTRA implementation in the referenced research |
+| --- | --- | --- |
+| Start marker | `FE EF` | ASCII `OTRA` |
+| Header before payload | 5 bytes | 36 bytes |
+| Integrity check | 16-bit payload-byte sum | CRC32 over the header with its CRC field zeroed, plus payload |
+| Purpose in the referenced code | Key actions and parameter control/query | File-transfer/update-related sessions used by the rooting research |
+
+The OTRA script configures its serial connection as `115200 8N1`. This establishes a setting used by that script, not an independent confirmation of the physical control UART's settings, voltage, or pinout.
+
+OTRA packets must not be passed to the `FE EF` control parser. The Upgrade key documented earlier is a key action; the existence of this separate transfer implementation does not establish how that key relates to an OTRA session. The research is linked for protocol context only; no rooting or firmware-transfer procedure is required for the control interface described in this repository.
+
+---
+
 # Repository structure
 
 Suggested layout:
