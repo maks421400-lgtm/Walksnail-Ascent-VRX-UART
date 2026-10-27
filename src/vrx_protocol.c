@@ -76,14 +76,18 @@ VrxResult vrx_send_key(
     VrxWriteFn write_fn,
     void *write_user,
     uint8_t key,
-    uint8_t argument)
+    uint8_t press_type)
 {
     const uint8_t payload[4] = {
         VRX_PAYLOAD_KEY,
         key,
-        argument,
+        press_type,
         0x00u
     };
+
+    /* The source explicitly marks key 0x08 invalid. */
+    if (key == 0x08u)
+        return VRX_ERROR_ARGUMENT;
 
     return vrx_send_packet(
         write_fn,
@@ -123,6 +127,11 @@ VrxResult vrx_pair(VrxWriteFn write_fn, void *user)
     return vrx_send_key(write_fn, user, VRX_KEY_PAIR, 0x00u);
 }
 
+VrxResult vrx_upgrade(VrxWriteFn write_fn, void *user)
+{
+    return vrx_send_key(write_fn, user, VRX_KEY_PAIR, 0x01u);
+}
+
 VrxResult vrx_record(VrxWriteFn write_fn, void *user)
 {
     return vrx_send_key(write_fn, user, VRX_KEY_RECORD, 0x00u);
@@ -160,6 +169,9 @@ VrxResult vrx_set_channel(
         0x00u,
         0x00u
     };
+
+    if (band > 2u || channel > 16u || hop > 1u)
+        return VRX_ERROR_ARGUMENT;
 
     return vrx_send_packet(
         write_fn,

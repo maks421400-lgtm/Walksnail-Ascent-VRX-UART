@@ -97,7 +97,7 @@ void app_vrx_rx_byte(uint8_t byte)
 void app_vrx_test_commands(void)
 {
     /*
-     * Confirmed key examples.
+     * Source-documented key examples.
      */
     (void)vrx_up(vrx_uart_write, &huart1);
 
@@ -141,10 +141,11 @@ void app_vrx_poll(void)
  *   vrx_right(vrx_uart_write, &huart1);
  *   vrx_enter(vrx_uart_write, &huart1);
  *   vrx_pair(vrx_uart_write, &huart1);
+ *   vrx_upgrade(vrx_uart_write, &huart1); // Upgrade-key action
  *   vrx_record(vrx_uart_write, &huart1);
  *   vrx_back(vrx_uart_write, &huart1);
- *   vrx_force720(vrx_uart_write, &huart1);
- *   vrx_debug(vrx_uart_write, &huart1);
+ *   vrx_force720(vrx_uart_write, &huart1); // Force 720p60
+ *   vrx_debug(vrx_uart_write, &huart1); // Unlock Debug3 mode
  *
  * Channel example:
  *

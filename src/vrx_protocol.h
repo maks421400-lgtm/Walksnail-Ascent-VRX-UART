@@ -130,12 +130,17 @@ VrxResult vrx_send_packet(
     const uint8_t *payload,
     uint16_t payload_length);
 
-/* Remote-control keys */
+/*
+ * Remote-control keys. press_type is the source field name; it is not a
+ * universal short/long-press flag. Key 0x08 returns VRX_ERROR_ARGUMENT
+ * without writing. Other combinations are passed through for research;
+ * use the named helpers for the combinations documented by the source.
+ */
 VrxResult vrx_send_key(
     VrxWriteFn write_fn,
     void *write_user,
     uint8_t key,
-    uint8_t argument);
+    uint8_t press_type);
 
 VrxResult vrx_up(VrxWriteFn write_fn, void *user);
 VrxResult vrx_down(VrxWriteFn write_fn, void *user);
@@ -143,12 +148,21 @@ VrxResult vrx_left(VrxWriteFn write_fn, void *user);
 VrxResult vrx_right(VrxWriteFn write_fn, void *user);
 VrxResult vrx_enter(VrxWriteFn write_fn, void *user);
 VrxResult vrx_pair(VrxWriteFn write_fn, void *user);
+/* Upgrade-key action only; this is not a firmware-transfer implementation. */
+VrxResult vrx_upgrade(VrxWriteFn write_fn, void *user);
 VrxResult vrx_record(VrxWriteFn write_fn, void *user);
 VrxResult vrx_back(VrxWriteFn write_fn, void *user);
+/* Force 720p60 (legacy API name retained). */
 VrxResult vrx_force720(VrxWriteFn write_fn, void *user);
+/* Unlock Debug3 mode (legacy API name retained). */
 VrxResult vrx_debug(VrxWriteFn write_fn, void *user);
 
-/* Channel control */
+/*
+ * Channel control: band 0..2, channel index 0..16, hop 0=fixed / 1=hopping.
+ * Out-of-range parameters return VRX_ERROR_ARGUMENT without writing.
+ * The documented channel range does not guarantee support on every band
+ * or firmware; no narrower per-band limits are established by the source.
+ */
 VrxResult vrx_set_channel(
     VrxWriteFn write_fn,
     void *write_user,
